@@ -1,0 +1,58 @@
+# The release pipeline: this repository reacts to its OWN release and publishes the version-tagged
+# image. That is not a loop — `SCMRelease` says only "source control has this version", and
+# qits-workspaces publishes it. qits-ci turns this green run into one `SoftwareRelease` per entry
+# under `artifacts:`, and nothing here listens for that.
+#
+# The repository has no version file. A qits release creates the version and the annotated tag, then
+# supplies the same version in the event.
+event: SCMRelease
+when:
+  - repository: { exact: qits-oci-workspace }
+
+# A DECLARATION, NOT A REPORT. qits-ci cannot see what the step pushed; it announces on the strength
+# of this line. Keep it true.
+#
+# The name is `qits/workspace-base`, not the repository name: that is what the consuming Dockerfiles
+# already write (qits-workspace-daemon's docker/Dockerfile.workspace layers the daemon onto it), and
+# a rename would break them for nothing.
+artifacts:
+  - { type: docker, name: qits/workspace-base }
+
+# NO deployments.yml in this repository, and that is correct. This image is consumed by a service —
+# it is a base another Dockerfile builds on — so nothing ever runs it as a container. That is the
+# same case as images/qits-oci, which has none. images/qits-oci-postgresql has one because a
+# database genuinely runs as a deployed container; this does not.
+steps:
+  - image: qits/build-images/ci-base:latest
+    docker: true
+    timeout-seconds: 7200
+    script: |
+      # The daemon runs this with `bash -c` and no -e. Without -e a failed docker build is swallowed
+      # and a green release run makes qits-ci announce an artifact that was never pushed. -u makes an
+      # unset registry variable stop the step.
+      set -eu
+
+      # The payload reaches the container verbatim as one string in $QITS_EVENT_PAYLOAD — there is
+      # no per-field projection. ci-base carries jq; the case guard refuses a malformed or absent
+      # value before any registry tag is created, since a CalVer is only digits and dots.
+      version=$(printf '%s' "$QITS_EVENT_PAYLOAD" | jq -r '.version')
+      case "$version" in
+        ''|null|*[!0-9.]*) echo "SCMRelease carries no valid CalVer" >&2; exit 1 ;;
+      esac
+
+      # THE TAG IS THE CHECKOUT TARGET. An event-triggered run is cloned at the head of main, which
+      # a later push moves; the tag does not. The clone is shallow and carries no tags, hence the
+      # explicit refspec, and the URL rather than `origin` because every address arrives as
+      # environment. `checkout --detach` peels the annotated tag to its commit.
+      git fetch "$QITS_CI_REPOSITORY_URL" "refs/tags/$version:refs/tags/$version"
+      git checkout --detach "$version"
+
+      # ONE TAG PER PIPELINE. Push only `:$version` here — never also `:latest` or the sha. A
+      # sibling repository tried `docker build -t A -t B` then pushed both, and the second push
+      # failed with "tag does not exist": BuildKit's exporter does not reliably leave every alias of
+      # a multi-tag build in the local image store. ci-post-receive.yml owns the sha coordinate;
+      # this pipeline owns the version coordinate.
+      ref="$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY/workspace-base:$version"
+      docker build -t "$ref" -f Dockerfile .
+      docker push "$ref"
+      docker rmi "$ref" || true
