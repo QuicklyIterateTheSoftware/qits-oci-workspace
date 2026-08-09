@@ -30,7 +30,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # installed. `unzip` is required by the Maven wrapper: with
 # `distributionType=only-script` the mvnw script silently falls back from the `.zip` distribution to
 # `.tar.gz` when unzip is absent, which then fails `distributionSha256Sum` validation (the pinned sum
-# is the zip's) — see docs/issues/2026-07-05_workspace-image-cannot-build-fixture.md.
+# is the zip's) — see the retired monolith's docs/issues/2026-07-05_workspace-image-cannot-build-fixture.md.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
@@ -95,10 +95,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # ---- Screenshot-test renderer: pinned fonts + Playwright Chromium ---------------------------
-# The visual baselines committed under service/src/main/webui (__screenshots__/*.png) are only
+# The visual baselines committed under the consuming SPA's source tree (__screenshots__/*.png) are only
 # reproducible on the exact Chromium build AND font stack that rendered them, so both are baked
 # into this image, which is the sole sanctioned producer of baselines — see
-# docs/epics/qits-build-setup/features/2026-07-13_screenshot-baseline-renderer-baked-into-image.md and the
+# the retired monolith's docs/epics/qits-build-setup/features/2026-07-13_screenshot-baseline-renderer-baked-into-image.md and the
 # screenshot-tests skill. Fonts first, in their own layer (they essentially never change; the
 # browser layer below changes on playwright bumps): fontconfig + DejaVu (Chromium's default Linux
 # sans-serif fallback), Liberation (metric-compatible Arial/Helvetica/Times), Noto core + color
@@ -114,7 +114,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # The Playwright-managed Chromium, keyed to the playwright version the frontend lockfile resolves —
-# PLAYWRIGHT_VERSION MUST match service/src/main/webui/pnpm-lock.yaml (grep "playwright@" there).
+# PLAYWRIGHT_VERSION MUST match the consuming SPA's lockfile (grep "playwright@" there).
 # Bump both together, rebuild this image, and re-record the baselines: that pairing is the
 # intended, reviewable re-record event. A lockfile bump without an image rebuild fails loudly at
 # test time with "Executable doesn't exist at /opt/ms-playwright/…" — that error means "rebuild
@@ -158,7 +158,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION} \
     && rm -rf /root/.local/bin/claude /root/.local/share/claude /root/.claude
 ENV DISABLE_AUTOUPDATER=1
 
-# Kimi Code CLI — the second coding-agent harness (docs/epics/qits-coding-agents/feature-ideas/kimi-code-harness.md).
+# Kimi Code CLI — the second coding-agent harness (the retired monolith's docs/epics/qits-coding-agents/feature-ideas/kimi-code-harness.md).
 # Same treatment as Claude Code: pinned version (KIMI_VERSION fails the build loudly on an unknown
 # version), installed system-wide via KIMI_INSTALL_DIR=/usr/local so the arbitrary runtime uid finds
 # it on PATH — the pinned installer drops only the `kimi` binary itself into bin/ (the ~/.kimi-code/bin
@@ -174,7 +174,7 @@ RUN curl -fsSL https://code.kimi.com/kimi-code/install.sh \
 ENV KIMI_CODE_NO_AUTO_UPDATE=1
 
 # Language servers for the coding agent's LSP plugins (jdtls-lsp / typescript-lsp from the
-# claude-plugins-official marketplace — see docs/epics/qits-coding-agents/features/2026-07-07_agent-lsp-plugins.md). The
+# claude-plugins-official marketplace — see the retired monolith's docs/epics/qits-coding-agents/features/2026-07-07_agent-lsp-plugins.md). The
 # plugins only *wire up* a language server that must already be on PATH; they do not bundle one. The
 # binaries are HOME-independent common toolchain (unlike the plugins themselves, which live on the
 # shared /claude-home volume and are installed at runtime), so they belong in the image next to the
