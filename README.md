@@ -12,9 +12,11 @@ It carries no daemon binary and no entrypoint. It is a base, not a runnable work
 
 ## What consumes it
 
-`qits-workspace-daemon`'s `docker/Dockerfile.workspace` layers the daemon binary on top of this
-image and entrypoints to it. That result is the image a workspace container runs. The project-agent
-images do the same thing for their own binary.
+`qits-workspace-daemon`'s `docker/Dockerfile` builds its native binary and layers it onto this
+image in one build — the final stage's `FROM` pins a released version of this repository, and the
+pin is bumped by the train (`ci-event-upstream-oci-workspace.yml` there) whenever this repository
+releases. That result is the image a workspace container runs. The project-agent images follow the
+same shape for their own binary.
 
 The published name is `qits/workspace-base`, not the repository name, because that is the name those
 Dockerfiles already write.
