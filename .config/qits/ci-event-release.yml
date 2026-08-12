@@ -1,13 +1,22 @@
-# The release pipeline: this repository reacts to its OWN release and publishes the version-tagged
-# image. That is not a loop — `SCMRelease` says only "source control has this version", and
-# qits-workspaces publishes it. qits-ci turns this green run into one `SoftwareRelease` per entry
-# under `artifacts:`, and nothing here listens for that.
+# The release pipeline: this repository reacts to its OWN release TAG and publishes the version-tagged
+# image. That is not a loop — `SCMPublishTag` says only "this repository now has this tag", and the
+# git host says it; nothing here pushes one. qits-ci turns a green run into one `SoftwareRelease` per
+# entry under `artifacts:` when an `SCMRelease` for the version arrived too, and nothing here listens
+# for either.
 #
-# The repository has no version file. A qits release creates the version and the annotated tag, then
-# supplies the same version in the event.
-event: SCMRelease
+# THE TAG IS THE TRIGGER SO THAT A RESTORE NEEDS NOTHING ELSE. The tag is the durable release stamp —
+# it outlives the event log and every image store — so a bootstrap replay re-establishes this release
+# by pushing the tag alone and letting this pipeline rebuild the image. A real release pushes the tag
+# and publishes `SCMRelease` beside it; the extra event buys the announcement, not the image
+# (bootstrap-replay-plan.md in the wrapper).
+#
+# The repository has no version file. A qits release creates the version and the annotated tag, and
+# the tag name IS that version.
+event: SCMPublishTag
 when:
-  - repository: { exact: qits-oci-workspace }
+  # repoId, not repository: the tag event carries the git host's own coordinate, which is the name
+  # this repository is served under.
+  - repoId: { exact: qits-oci-workspace }
 
 # A DECLARATION, NOT A REPORT. qits-ci cannot see what the step pushed; it announces on the strength
 # of this line. Keep it true.
@@ -34,10 +43,12 @@ steps:
 
       # The payload reaches the container verbatim as one string in $QITS_EVENT_PAYLOAD — there is
       # no per-field projection. ci-base carries jq; the case guard refuses a malformed or absent
-      # value before any registry tag is created, since a CalVer is only digits and dots.
-      version=$(printf '%s' "$QITS_EVENT_PAYLOAD" | jq -r '.version')
+      # value before any registry tag is created, since a CalVer is only digits and dots. It matters
+      # more than it did: the tag name IS the version now, and no release flow vetted it — any tag
+      # pushed to this repository arrives here.
+      version=$(printf '%s' "$QITS_EVENT_PAYLOAD" | jq -r '.tagName')
       case "$version" in
-        ''|null|*[!0-9.]*) echo "SCMRelease carries no valid CalVer" >&2; exit 1 ;;
+        ''|null|*[!0-9.]*) echo "not a CalVer tag: $version" >&2; exit 1 ;;
       esac
 
       # THE TAG IS THE CHECKOUT TARGET. An event-triggered run is cloned at the head of main, which
