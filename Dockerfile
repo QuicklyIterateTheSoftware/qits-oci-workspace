@@ -50,6 +50,34 @@ RUN apt-get update \
         ripgrep \
         fd-find \
     && rm -rf /var/lib/apt/lists/*
+
+# Git invokes a credential helper for every HTTP remote it needs credentials for.  This one mints a
+# short-lived bearer from the per-workspace commissioned client, but answers ONLY the injected
+# qits-githost authority.  A checkout can contain arbitrary submodule remotes, so a generic helper
+# which answered those too would disclose a platform credential to repository-controlled hosts.
+# The container factory enables it only when it injects the complete commissioned pair.
+RUN <<'EOF' > /usr/local/bin/qits-git-credential
+#!/bin/sh
+[ "$1" = get ] || exit 0
+host=
+protocol=
+while IFS= read -r line && [ -n "$line" ]; do
+  case "$line" in host=*) host=${line#host=};; protocol=*) protocol=${line#protocol=};; esac
+done
+[ "$host" = "$QITS_GIT_AUTH_HOST" ] || exit 0
+case "$protocol" in http|https) ;; *) exit 0;; esac
+[ -n "$QITS_COMMISSIONED_CLIENT_ID" ] && [ -n "$QITS_COMMISSIONED_CLIENT_SECRET" ] || exit 0
+response=$(curl -fsS --connect-timeout 2 --max-time 10 \
+  -u "$QITS_COMMISSIONED_CLIENT_ID:$QITS_COMMISSIONED_CLIENT_SECRET" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  --data "grant_type=client_credentials&audience=$QITS_GIT_AUTH_AUDIENCE" \
+  "$QITS_GIT_AUTH_TOKEN_URL") || exit 0
+token=$(printf '%s' "$response" | jq -r '.access_token // empty')
+[ -n "$token" ] || exit 0
+printf 'username=oauth2\npassword=%s\n\n' "$token"
+EOF
+RUN chmod 0700 /usr/local/bin/qits-git-credential
+RUN printf '[credential]\n\thelper = /usr/local/bin/qits-git-credential\n' > /etc/qits-gitconfig
 # `ripgrep`/`fd-find` are general CLI tools (they benefit action scripts) and are also where kimi's
 # search tools resolve `rg`/`fd` on PATH — the pinned kimi installer below ships only the `kimi`
 # binary, not the sidekicks a desktop install carries. Debian names fd `fdfind`, which kimi handles.
