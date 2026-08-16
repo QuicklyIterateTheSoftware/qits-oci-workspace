@@ -57,7 +57,7 @@ RUN apt-get update \
 # which answered those too would disclose a platform credential to repository-controlled hosts.
 # The container factory enables it only when it injects the complete commissioned pair.
 COPY qits-git-credential /usr/local/bin/qits-git-credential
-RUN chmod 0700 /usr/local/bin/qits-git-credential
+RUN chmod 0755 /usr/local/bin/qits-git-credential
 RUN printf '[credential]\n\thelper = /usr/local/bin/qits-git-credential\n' > /etc/qits-gitconfig
 # `ripgrep`/`fd-find` are general CLI tools (they benefit action scripts) and are also where kimi's
 # search tools resolve `rg`/`fd` on PATH — the pinned kimi installer below ships only the `kimi`
