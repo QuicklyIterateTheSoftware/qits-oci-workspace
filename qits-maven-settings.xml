@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Maven settings every workspace build runs with, applied through MAVEN_ARGS by
+  /etc/profile.d/qits-workspace.sh.
+
+  IT EXISTS FOR ONE REASON: Maven 3.8+ blocks plain-HTTP repositories, and there is no TLS inside
+  qits-net, so the `qits-maven` repository every qits pom declares is refused before any request is
+  made. A mirror whose <mirrorOf> names the repository id by hand outranks that blocker — the same
+  trick, for the same reason, as the `.qits-maven-settings.xml` each repository carries for its
+  image build. This is the workspace's copy of it; the two should keep matching.
+
+  THE URL IS TOLD, NEVER DERIVED. qits-workspaces injects QITS_MAVEN_REPOSITORY_URL when it creates
+  the container, because the address belongs to the deployment and not to this image. The poms'
+  own fallback — registry.dev.localhost:8080 — is the deployment HOST's published port; inside a
+  container it resolves to loopback, where nothing listens.
+
+  <mirrorOf> IS THE REPOSITORY ID AND NOTHING WIDER. Not `*` and not `external:*`: a workspace
+  builds whatever repository it was opened on, and a wildcard would silently route Maven Central
+  through a registry that does not proxy it. Only the id qits poms declare is redirected.
+
+  NO <servers> ENTRY. Reads from qits-artifacts are anonymous inside the network; the credentialed
+  path is `npm publish` and image builds, neither of which happens here.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>qits-maven-network</id>
+      <mirrorOf>qits-maven</mirrorOf>
+      <url>${env.QITS_MAVEN_REPOSITORY_URL}</url>
+    </mirror>
+  </mirrors>
+</settings>
