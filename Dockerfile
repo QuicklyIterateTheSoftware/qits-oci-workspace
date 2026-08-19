@@ -233,3 +233,33 @@ WORKDIR /workspace
 # every container-side git verb. The whole container is a single-tenant sandbox, so mark all
 # directories safe (system-wide, at build time as root).
 RUN git config --system --add safe.directory '*'
+
+# --- what a build inside a workspace needs ---------------------------------------------------------
+# Everything above equips the container to RUN a toolchain. These two lines are what let it BUILD
+# the platform's own repositories, and both address the same root cause: this image is entered as an
+# arbitrary uid on a network whose addresses it does not know, and Maven and PostgreSQL each refuse
+# to work under exactly one of those conditions. Measured on the live platform, where
+# `./mvnw verify` on a qits repository failed in three seconds on the first and, once past it, went
+# on to fail every embedded-PostgreSQL test on the second.
+#
+# The reasoning for each is in the script and the settings file; they are commented at length
+# because both failures name a symptom far from the cause.
+#
+# /etc/passwd IS GROUP-WRITABLE, WHICH IS A DELIBERATE TRADE. Group 0 is the group the container
+# runs with, so the profile snippet can append its own entry; this is the arbitrary-uid convention
+# Red Hat documents for OpenShift images (`chmod g=u /etc/passwd`) and it is the only mechanism that
+# works for a uid chosen after the image is built, short of preloading an NSS shim into every
+# process. What it costs: a container process can write a passwd entry, and `su` is setuid, so
+# in-container root is reachable from inside. That is judged acceptable HERE and would not be
+# elsewhere — this container is a single-tenant sandbox whose entire purpose is executing arbitrary
+# agent code, it already runs with a world-writable /workspace and holds its own platform
+# credential, and it mounts no docker socket, so in-container root grants no reach the session did
+# not already have. If that judgement is ever revisited, libnss-wrapper is the alternative and the
+# profile snippet is the only caller to change.
+COPY qits-maven-settings.xml /etc/qits/maven-settings.xml
+COPY qits-workspace-profile.sh /etc/profile.d/qits-workspace.sh
+RUN chmod 0644 /etc/qits/maven-settings.xml /etc/profile.d/qits-workspace.sh \
+    && chmod g=u /etc/passwd \
+    # A login shell must survive this file, so a syntax error has to break the BUILD, not every
+    # command in every workspace: bash -n parses without executing.
+    && bash -n /etc/profile.d/qits-workspace.sh
