@@ -263,3 +263,22 @@ RUN chmod 0644 /etc/qits/maven-settings.xml /etc/profile.d/qits-workspace.sh \
     # A login shell must survive this file, so a syntax error has to break the BUILD, not every
     # command in every workspace: bash -n parses without executing.
     && bash -n /etc/profile.d/qits-workspace.sh
+
+# The @qits scope, which the environment cannot carry. `npm_config_@qits:registry` is npm's only
+# spelling for it and is neither a POSIX env name (qits-containers refuses it, deliberately) nor
+# something a shell can export — so it is injected per-invocation by a shim ahead of the real npm on
+# PATH. The shim's header carries the full reasoning, including why a .npmrc cannot do this job.
+#
+# It shadows `npm`, which is worth stating plainly: `command -v npm` reports /usr/local/bin/npm here.
+# That is the cost of covering the invocations nobody types — Quinoa resolves `npm` from PATH and
+# spawns it straight from the Maven JVM, so a shell function or alias would miss exactly the builds
+# that matter most. The shim execs the real binary and adds nothing when the platform has told us no
+# registry.
+COPY qits-npm-shim.sh /usr/local/bin/npm
+RUN chmod 0755 /usr/local/bin/npm \
+    && bash -n /usr/local/bin/npm \
+    # The shim must sit AHEAD of the real npm, not behind it: if PATH ever puts /usr/bin first this
+    # silently stops applying, and a workspace goes back to resolving @qits from the public
+    # registry. Assert the resolution at build time rather than discovering it in a build log.
+    && [ "$(command -v npm)" = /usr/local/bin/npm ] \
+    && [ -x /usr/bin/npm ]
