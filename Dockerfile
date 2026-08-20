@@ -59,6 +59,17 @@ RUN apt-get update \
 COPY qits-git-credential /usr/local/bin/qits-git-credential
 RUN chmod 0755 /usr/local/bin/qits-git-credential
 RUN printf '[credential]\n\thelper = /usr/local/bin/qits-git-credential\n' > /etc/qits-gitconfig
+# The same credential, for the hands that are not git: `qits-token <audience>` mints a bearer for one
+# platform service (the release door, qits-ci's run list, …), and `qits-npm-ci` is `npm ci` with the
+# lockfile's developer-host origins swapped for the platform's registries and then restored byte for
+# byte. Both are inert without the injected environment; both carry their reasoning in their headers.
+# They exist because an agent that could push, build and test inside a workspace still could not
+# release from it without reverse-engineering the door (integrator.md, ad-hoc workspace 351,
+# 2026-08-20) — the guide now names these two.
+COPY qits-token /usr/local/bin/qits-token
+COPY qits-npm-ci /usr/local/bin/qits-npm-ci
+RUN chmod 0755 /usr/local/bin/qits-token /usr/local/bin/qits-npm-ci \
+    && sh -n /usr/local/bin/qits-token && sh -n /usr/local/bin/qits-npm-ci
 # `ripgrep`/`fd-find` are general CLI tools (they benefit action scripts) and are also where kimi's
 # search tools resolve `rg`/`fd` on PATH — the pinned kimi installer below ships only the `kimi`
 # binary, not the sidekicks a desktop install carries. Debian names fd `fdfind`, which kimi handles.
