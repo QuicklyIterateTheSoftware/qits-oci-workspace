@@ -4,9 +4,16 @@ The workspace toolchain base image, published as **`qits/workspace-base`**.
 
 It holds the tools a workspace container needs to work on a checkout: git and a shell toolchain,
 JDK 25, node + pnpm, python, a pinned Playwright Chromium with a pinned font stack, the coding agent
-CLIs (Claude Code, Kimi Code), and language servers (jdtls, typescript-language-server). Every
-package is commented in the `Dockerfile` with the reason it is there. Read that before changing
-anything.
+CLIs (Claude Code, Kimi Code), language servers (jdtls, typescript-language-server), and the docker
+**client**. Every package is commented in the `Dockerfile` with the reason it is there. Read that
+before changing anything.
+
+The docker CLI is the one that looks alarming and is not: it is `docker-ce-cli` alone — no daemon,
+no socket — and a workspace container reaches nothing with it unless it was created in **admin
+mode**, the per-workspace posture that makes qits-containers bind the host's socket into it. In
+every other workspace `docker ps` answers "Cannot connect to the Docker daemon", which is the honest
+state. The privilege is the bind, which only the platform grants; this is the client that has
+something to say once it exists.
 
 It carries no daemon binary and no entrypoint. It is a base, not a runnable workspace.
 

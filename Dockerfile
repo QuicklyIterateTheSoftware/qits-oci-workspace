@@ -114,6 +114,38 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && corepack prepare pnpm@latest --activate \
     && rm -rf /var/lib/apt/lists/*
 
+# ---- The docker CLI, for admin workspaces ---------------------------------------------------
+# THE CLIENT ONLY, AND IT REACHES NOTHING BY ITSELF. `docker-ce-cli` is the `docker` command and
+# nothing else: no daemon, no containerd, no socket. A workspace container has no docker socket
+# unless it was created in ADMIN MODE (qits-workspaces' Workspace.admin — a per-workspace posture
+# somebody asked for at creation, which qits-containers renders as the one bind plus the socket's
+# own group), and in every other workspace this binary is inert: `docker ps` there answers "Cannot
+# connect to the Docker daemon at unix:///var/run/docker.sock", which is the honest state.
+#
+# It is in the BASE rather than in a second image, because a second image is a second thing to
+# build, tag, pin and keep matched — and the whole difference between the two would be 40 MB of CLI
+# that does nothing without a bind only the platform can grant. The privilege is the socket; a
+# client with no socket is a client with nothing to talk to.
+#
+# Docker's own apt repository, keyring-verified, arch-resolved by apt — the same shape as the
+# Adoptium and NodeSource repositories above, and the reason this is not a static tarball pinned per
+# architecture. The version floats with the repository like node's does: a CLI speaks to a daemon
+# older and newer than itself by design (API version negotiation), so a pin here would buy nothing
+# and would go stale against whatever docker the host runs.
+RUN install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg \
+        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" \
+        > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/* \
+    # The client, and only the client: a daemon in this image would be a second docker on the host's
+    # network with none of the platform's rules, so assert what the layer installed rather than
+    # trusting the package name to keep meaning what it means today.
+    && [ -x /usr/bin/docker ] \
+    && ! command -v dockerd
+
 # ---- Screenshot-test renderer: pinned fonts + Playwright Chromium ---------------------------
 # The visual baselines committed under the consuming SPA's source tree (__screenshots__/*.png) are only
 # reproducible on the exact Chromium build AND font stack that rendered them, so both are baked
@@ -152,8 +184,10 @@ RUN apt-get update \
     && chmod -R a+rX ${PLAYWRIGHT_BROWSERS_PATH} \
     && rm -rf /root/.npm /var/lib/apt/lists/*
 
-# Renderer provenance, greppable from inside any container (workspace containers have no docker
-# CLI, so a file beats a LABEL): the exact Chromium build plus every baked font package — including
+# Renderer provenance, greppable from inside any container (a LABEL is readable only through a
+# docker daemon, by a caller that knows its own container id — the CLI above is inert in every
+# workspace but an admin one — so a file beats a LABEL): the exact Chromium build plus every baked
+# font package — including
 # the supplemental fonts --with-deps pulled in, hence the 'fonts-*' glob rather than the five named
 # above (grep -v drops known-but-not-installed packages the glob also matches). The trailing grep
 # asserts the chromium line made it in, so a browser-layout change (the chrome-linux64 path is
